@@ -1,0 +1,22 @@
+# Hard caps (per run)
+max_total_units: 60
+max_units_per_game: 15
+max_units_per_market: 30   # e.g., all ATS combined
+max_units_per_side: 12     # e.g., PHI ATS
+
+# Relative constraints vs baseline (A -> B)
+max_exposure_increase_units: 20    # total stake increase across board
+max_exposure_increase_pct: 0.35    # proportionally vs A total stakes
+
+# Grade mix constraints (% of count)
+grade_caps:
+  A: { min: 0.05, max: 0.40 }
+  B: { min: 0.15, max: 0.55 }
+  C: { min: 0.00, max: 0.40 }
+
+# Price sanity (optional)
+min_abs_price:  -2000
+max_abs_price:   2000
+
+# Require non-empty picks
+require_non_empty: true
