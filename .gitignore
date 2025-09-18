@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+out/
+*.duckdb
+.env
+.pytest_cache/
+src/ironclad.egg-info/
