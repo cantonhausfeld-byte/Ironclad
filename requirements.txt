@@ -1,0 +1,13 @@
+pydantic>=2.6
+pydantic-settings>=2.2
+pandas>=2.1
+numpy>=1.26
+duckdb>=1.0.0
+requests>=2.31
+streamlit>=1.37
+structlog>=24.1
+diskcache>=5.6.3
+python-dotenv>=1.0.1
+click>=8.1
+gspread>=6.1
+google-auth>=2.35
