@@ -1,0 +1,123 @@
+name: Promote & Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      RUN_A:
+        description: Baseline run_id
+        required: true
+        type: string
+      RUN_B:
+        description: Challenger run_id to promote
+        required: true
+        type: string
+      PROFILE:
+        description: Profile to promote into
+        default: prod
+        type: string
+      SEASON:
+        description: Optional season (overrides inference)
+        required: false
+        type: string
+      WEEK:
+        description: Optional week (overrides inference)
+        required: false
+        type: string
+      FORCE:
+        description: Force promotion even if guardrails fail (danger)
+        default: "false"
+        type: choice
+        options: ["false","true"]
+
+  pull_request:
+    types: [labeled, opened, synchronize]
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  actions: write
+  checks: write
+
+concurrency:
+  group: promote-prod-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  promote-and-smoke:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'promote-ready'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # DuckDB file lives in repo workspace by convention
+      DUCK: out/ironclad.duckdb
+      PROFILE: ${{ inputs.PROFILE || 'prod' }}
+      SEASON: ${{ inputs.SEASON }}
+      WEEK: ${{ inputs.WEEK }}
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK || '' }}
+      # Add any vendor/API keys here (must be set in repo secrets)
+      ODDSAPI_KEY: ${{ secrets.ODDSAPI_KEY || '' }}
+      SPORTSGAMEODDS_KEY: ${{ secrets.SPORTSGAMEODDS_KEY || '' }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt','**/pyproject.toml','**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install deps
+        run: |
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Fallbacks if your repo is still bootstrapping:
+          pip install duckdb pydantic pydantic-settings click streamlit requests pytest ruff mypy
+
+      - name: Show profile file (if exists)
+        run: |
+          ls -lah config || true
+          ls -lah config/profiles || true
+
+      - name: Validate guardrails
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          RUN_A: ${{ inputs.RUN_A }}
+          RUN_B: ${{ inputs.RUN_B }}
+        run: |
+          make guardrails-validate
+
+      - name: Promote challenger to ${{ env.PROFILE }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          RUN_A: ${{ inputs.RUN_A }}
+          RUN_B: ${{ inputs.RUN_B }}
+          FORCE: ${{ inputs.FORCE == 'true' && '1' || '' }}
+        run: |
+          if [ "${FORCE}" = "1" ]; then echo "(FORCE mode)"; fi
+          make promote
+
+      - name: Smoke (post-promotion)
+        run: |
+          make smoke-prod
+
+      - name: Upload smoke reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-reports-${{ github.run_id }}
+          path: |
+            out/reports/**
+            out/diffs/**
+            out/*.log
+          if-no-files-found: warn
