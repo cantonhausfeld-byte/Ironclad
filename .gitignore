@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+out/
+*.duckdb
+.ruff_cache/
+.pytest_cache/
+
+# Reports
+out/
