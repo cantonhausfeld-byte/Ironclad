@@ -1,0 +1,39 @@
+name: Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e .[dev]
+      - name: Run pipeline
+        env:
+          IRONCLAD_DEMO: "1"
+          IRONCLAD_PROFILE: "ci"
+        run: |
+          python scripts/ic.py run --season 2025 --week 1 --profile ci --db-path out/ci.duckdb
+      - name: Smoke script
+        env:
+          IRONCLAD_DEMO: "1"
+          IRONCLAD_PROFILE: "ci"
+        run: |
+          python scripts/smoke/post_promo_smoke.py --season 2025 --week 1
+      - name: Upload smoke reports
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-reports
+          path: out/reports
