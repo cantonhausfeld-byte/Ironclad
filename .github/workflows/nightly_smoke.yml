@@ -1,0 +1,64 @@
+name: Nightly Smoke (prod)
+
+on:
+  schedule:
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+    inputs:
+      PROFILE:
+        description: Profile name
+        default: prod
+        type: string
+      SEASON:
+        description: Optional season override
+        required: false
+        type: string
+      WEEK:
+        description: Optional week override
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  nightly-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PROFILE: ${{ inputs.PROFILE || 'prod' }}
+      SEASON: ${{ inputs.SEASON }}
+      WEEK: ${{ inputs.WEEK }}
+      DUCK: out/ironclad.duckdb
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK || '' }}
+      ODDSAPI_KEY: ${{ secrets.ODDSAPI_KEY || '' }}
+      SPORTSGAMEODDS_KEY: ${{ secrets.SPORTSGAMEODDS_KEY || '' }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt','**/pyproject.toml','**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-pip-
+      - name: Install deps
+        run: |
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install duckdb pydantic pydantic-settings click streamlit requests
+      - name: Basic env check
+        run: python scripts/ops/check_secrets.py || true
+      - name: Nightly smoke
+        run: make smoke-prod
+      - name: Upload smoke reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-smoke-${{ github.run_id }}
+          path: |
+            out/reports/**
+            out/*.log
+          if-no-files-found: warn
+          retention-days: 14
