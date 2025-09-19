@@ -1,0 +1,68 @@
+name: Promote & Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      RUN_A:
+        description: "Baseline run ID"
+        required: true
+      RUN_B:
+        description: "Challenger run ID"
+        required: true
+      PROFILE:
+        description: "Profile to promote"
+        default: prod
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  promote-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PROFILE: ${{ inputs.PROFILE }}
+      RUN_A: ${{ inputs.RUN_A }}
+      RUN_B: ${{ inputs.RUN_B }}
+      DUCK: out/ironclad.duckdb
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK || '' }}
+      ODDSAPI_KEY: ${{ secrets.ODDSAPI_KEY || '' }}
+      SPORTSGAMEODDS_KEY: ${{ secrets.SPORTSGAMEODDS_KEY || '' }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt','**/pyproject.toml','**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install deps
+        run: |
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install duckdb pydantic pydantic-settings click streamlit requests
+
+      - name: Basic env check
+        run: python scripts/ops/check_secrets.py || true
+
+      - name: Promote & smoke
+        run: make smoke-prod
+
+      - name: Upload smoke reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-reports-${{ github.run_id }}
+          path: |
+            out/reports/**
+            out/diffs/**
+            out/*.log
+          if-no-files-found: warn
+          retention-days: 14
